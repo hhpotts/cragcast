@@ -5,7 +5,7 @@
  */
 
 import type { ToolDefinition } from './types'
-import { fetchForecastWithRetry } from '../forecast'
+import { fetchForecastWithRetry, kvFromEvent } from '../forecast'
 import { getCragsByRegion, searchCragByName } from '../crag-db'
 import { regions, areas } from '../regions'
 import { scoreRegion, scoreCrag } from '../score'
@@ -184,7 +184,7 @@ export async function executeTool(name: string, args: Record<string, any>, ctx: 
     case 'get_region_info':
       return executeGetRegionInfo(args)
     case 'get_mwis_forecast':
-      return executeGetMwisForecast(args)
+      return executeGetMwisForecast(args, ctx)
     default:
       return JSON.stringify({ error: `Unknown tool: ${name}` })
   }
@@ -508,7 +508,17 @@ function executeGetRegionInfo(args: Record<string, any>): string {
   return JSON.stringify({ areas: grouped })
 }
 
-async function executeGetMwisForecast(args: Record<string, any>): Promise<string> {
+// MWIS typically republishes forecasts a couple of times a day, and repeated
+// live scraping on every chat turn is both wasteful and discourteous to a
+// small, sponsorship-funded site with no public API — cache each area's
+// result for an hour, in the same KV store used for weather forecasts.
+const MWIS_CACHE_TTL_MS = 60 * 60 * 1000
+
+// In-memory fallback so local dev (or any request without KV bound) still
+// avoids re-scraping on every call within the same process.
+const mwisMemCache = new Map<string, { result: Record<string, any>; t: number }>()
+
+async function executeGetMwisForecast(args: Record<string, any>, ctx: ToolContext): Promise<string> {
   const { area } = args
   if (!area) return JSON.stringify({ error: 'area required' })
 
@@ -528,6 +538,22 @@ async function executeGetMwisForecast(args: Record<string, any>): Promise<string
   const mapping = mwisAreas[area]
   if (!mapping) return JSON.stringify({ error: `Unknown MWIS area: ${area}` })
 
+  const cacheKey = `mwis:${area}`
+  const kv = kvFromEvent(ctx.event)
+
+  if (kv) {
+    const raw = await kv.get(cacheKey).catch(() => null)
+    if (raw) {
+      try {
+        const cached = JSON.parse(raw)
+        if (Date.now() - cached.t < MWIS_CACHE_TTL_MS) return JSON.stringify({ ...cached.result, cached: true })
+      } catch { /* fall through to a live fetch */ }
+    }
+  } else {
+    const cached = mwisMemCache.get(cacheKey)
+    if (cached && Date.now() - cached.t < MWIS_CACHE_TTL_MS) return JSON.stringify({ ...cached.result, cached: true })
+  }
+
   try {
     const url = `https://www.mwis.org.uk/forecasts/${mapping.group}/${mapping.url}`
     const res = await fetch(url, {
@@ -543,6 +569,14 @@ async function executeGetMwisForecast(args: Record<string, any>): Promise<string
 
     const html = await res.text()
     const forecast = parseMwisHtml(html, area)
+    forecast.url = url // the specific area page actually scraped, for attribution
+
+    if (kv) {
+      await kv.put(cacheKey, JSON.stringify({ result: forecast, t: Date.now() }), { expirationTtl: 60 * 60 * 6 }).catch(() => {})
+    } else {
+      mwisMemCache.set(cacheKey, { result: forecast, t: Date.now() })
+    }
+
     return JSON.stringify(forecast)
   } catch (e: any) {
     return JSON.stringify({ error: `Failed to fetch MWIS: ${e.message}`, area })

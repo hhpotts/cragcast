@@ -19,10 +19,14 @@ export type ForecastResult = {
   error?: boolean  // true if this is a fallback empty response due to API error
 }
 
-type KV = { get: (k: string) => Promise<string | null>; put: (k: string, v: string, opts?: { expirationTtl?: number }) => Promise<void> }
+export type KV = { get: (k: string) => Promise<string | null>; put: (k: string, v: string, opts?: { expirationTtl?: number }) => Promise<void> }
 
-function kvFromEvent(event: any): KV | null {
-  const env = event?.platform?.env || {}
+// Bindings live at event.context.cloudflare.env on this Nitro/Cloudflare-Pages
+// setup (matches every other server util) — event.platform.env alone is never
+// populated here, so this previously never found the KV binding, meaning this
+// entire cache has been silently inactive (always falling through to a live fetch).
+export function kvFromEvent(event: any): KV | null {
+  const env = event?.context?.cloudflare?.env || event?.platform?.env || {}
   return (env.CRAGCAST as KV) || (env.CLIMB_KV as KV) || null
 }
 
