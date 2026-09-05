@@ -44,7 +44,8 @@
         </div>
       </template>
       <template #areaSort-data="{ row }">
-        {{ row.pending ? '…' : (isCragGranularity ? row.region : row.area) }}
+        <span v-if="row.pending" class="skeleton inline-block h-3 w-16 rounded align-middle" />
+        <template v-else>{{ isCragGranularity ? row.region : row.area }}</template>
       </template>
       <template #score-header="{ column }">
         <UPopover>
@@ -57,7 +58,8 @@
         </UPopover>
       </template>
       <template #score-data="{ row }">
-        <span class="font-semibold">{{ row.pending ? '…' : row.score }}</span>
+        <span v-if="row.pending" class="skeleton inline-block h-4 w-8 rounded align-middle" />
+        <span v-else class="font-semibold">{{ row.score }}</span>
       </template>
       <template #warnings-data="{ row }">
         <template v-if="!row.pending && !row.error && row.warnings?.length">
@@ -75,10 +77,9 @@
       <template #weather-data="{ row }">
         <div class="inline-flex justify-center bg-slate-400 rounded px-2 py-1">
           <template v-if="row.pending">
-            <div class="flex items-center gap-2 text-lg text-gray-300">
-              <span class="animate-pulse">•</span>
-              <span class="animate-pulse">•</span>
-              <span class="animate-pulse">•</span>
+            <div class="flex items-center gap-2">
+              <span class="skeleton h-7 w-7 rounded shrink-0" />
+              <span class="skeleton h-7 w-7 rounded shrink-0" />
             </div>
           </template>
           <template v-else>
@@ -96,23 +97,26 @@
         </div>
       </template>
       <template #avgTempC-data="{ row }">
-        <span class="block text-center">{{ row.pending ? '…' : units.convertTemp(row.avgTempC) }}</span>
+        <span v-if="row.pending" class="flex justify-center"><span class="skeleton inline-block h-3 w-6 rounded" /></span>
+        <span v-else class="block text-center">{{ units.convertTemp(row.avgTempC) }}</span>
       </template>
       <template #avgWindMph-data="{ row }">
-        <span class="inline-flex items-center justify-center gap-0.5 w-full">{{ row.pending ? '…' : units.convertWind(row.avgWindMph) }}<template v-if="!row.pending && row.avgWindDir"> <Icon name="lucide:arrow-up" class="h-3.5 w-3.5 text-current" :style="{ transform: windArrowRotation(row.avgWindDir) }" /></template></span>
+        <span v-if="row.pending" class="flex justify-center"><span class="skeleton inline-block h-3 w-6 rounded" /></span>
+        <span v-else class="inline-flex items-center justify-center gap-0.5 w-full">{{ units.convertWind(row.avgWindMph) }}<template v-if="row.avgWindDir"> <Icon name="lucide:arrow-up" class="h-3.5 w-3.5 text-current" :style="{ transform: windArrowRotation(row.avgWindDir) }" /></template></span>
       </template>
       <template #totalRainMm-data="{ row }">
-        <span class="block text-center">{{ row.pending ? '…' : units.convertRain(row.totalRainMm) }}</span>
+        <span v-if="row.pending" class="flex justify-center"><span class="skeleton inline-block h-3 w-6 rounded" /></span>
+        <span v-else class="block text-center">{{ units.convertRain(row.totalRainMm) }}</span>
       </template>
       <template #distanceMins-data="{ row }">
-        <span class="block text-center">
-          <template v-if="row.pending">…</template>
-          <template v-else-if="Number.isFinite(row.distanceMins) && row.distanceMins > 0">{{ units.convertDistance(row.distanceMins) }}</template>
+        <span v-if="row.pending" class="flex justify-center"><span class="skeleton inline-block h-3 w-8 rounded" /></span>
+        <span v-else class="block text-center">
+          <template v-if="Number.isFinite(row.distanceMins) && row.distanceMins > 0">{{ units.convertDistance(row.distanceMins) }}</template>
         </span>
       </template>
       <template #ukc-data="{ row }">
         <template v-if="row.pending">
-          <span class="text-gray-400">—</span>
+          <span class="skeleton inline-block h-4 w-24 rounded" />
         </template>
         <template v-else>
           <div class="flex items-center gap-2">
@@ -305,3 +309,28 @@ function iconLabel(code: string): string {
   }
 }
 </script>
+
+<style scoped>
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(107, 114, 128, 0.2);
+}
+.dark .skeleton {
+  background-color: rgba(55, 65, 81, 0.5);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 100%);
+  animation: shimmer 1.4s infinite;
+}
+.dark .skeleton::after {
+  background-image: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0) 100%);
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+</style>

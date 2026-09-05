@@ -50,6 +50,7 @@ import { useUnits } from '~/composables/useUnits'
 import { useCustomCrags } from '~/composables/useCustomCrags'
 import { useAreas } from '~/composables/useAreas'
 import { useCrags, type CragItem } from '~/composables/useCrags'
+import { haversineKm, driveMinutesApprox } from '~/utils/distance'
 import CompareTable from '~/components/CompareTable.vue'
 import PrefsForm from '~/components/PrefsForm.vue'
 import ResultsHeader from '~/components/ResultsHeader.vue'
@@ -232,6 +233,25 @@ function clearTable() {
   clear()
 }
 
+// Filter regions by distance client-side (using the same coordinates and
+// formula the server uses for the same computation) so out-of-range regions
+// are never shown as a placeholder row in the first place.
+function filterRegionsByDistance(regionList: any[], snap: PrefsSnapshot): any[] {
+  const hasHome = snap.lat !== undefined && Number.isFinite(snap.lat) && snap.lon !== undefined && Number.isFinite(snap.lon)
+  if (!hasHome) return regionList
+
+  const home = { lat: snap.lat as number, lon: snap.lon as number }
+  const unlimited = !Number.isFinite(snap.maxDriveMins)
+  return regionList.filter(r => {
+    const pt = r.points?.[0]
+    if (!pt) return true
+    const distanceMins = driveMinutesApprox(haversineKm(home, { lat: pt.lat, lon: pt.lon }))
+    if (!unlimited && distanceMins > snap.maxDriveMins) return false
+    if (snap.minDriveMins > 0 && distanceMins < snap.minDriveMins) return false
+    return true
+  })
+}
+
 async function loadCompare(snap: PrefsSnapshot) {
   // Cancel any previous in-flight compare loop
   if (compareController) compareController.abort()
@@ -283,13 +303,17 @@ async function loadCompare(snap: PrefsSnapshot) {
       }
     }
   } else {
-    // Region mode: prefill table with placeholder rows, then load each region
-    items.value = regionList.map(r => ({ id: r.id, name: r.name, area: (r as any).area, cragCount: (r as any).cragCount || 0, pending: true }))
+    // Region mode: filter by distance *before* showing anything — previously
+    // every region was shown as a placeholder immediately and out-of-range
+    // ones were only removed after their own forecast happened to load,
+    // which looked like rows randomly vanishing as the list loaded.
+    const filteredRegions = filterRegionsByDistance(regionList, snap)
+    items.value = filteredRegions.map(r => ({ id: r.id, name: r.name, area: (r as any).area, cragCount: (r as any).cragCount || 0, pending: true }))
 
     // 2) Fetch each region individually with a small delay to avoid rate limits.
     // Each region gets its own timeout/controller so one slow region can't abort
     // the whole loop — it only aborts that region's own request.
-    for (const r of regionList) {
+    for (const r of filteredRegions) {
       if (controller.signal.aborted) return
 
       const regionController = new AbortController()
@@ -305,15 +329,8 @@ async function loadCompare(snap: PrefsSnapshot) {
         controller.signal.removeEventListener('abort', onOuterAbort)
         if (controller.signal.aborted) return
 
-        const unlimited = !Number.isFinite(snap.maxDriveMins)
-        const tooFar = !unlimited && row.distanceMins > snap.maxDriveMins
-        const tooClose = snap.minDriveMins > 0 && row.distanceMins < snap.minDriveMins
-        if (tooFar || tooClose) {
-          items.value = items.value.filter((x: any) => x.id !== r.id)
-        } else {
-          const idx = items.value.findIndex((x: any) => x.id === r.id)
-          if (idx !== -1) items.value[idx] = row
-        }
+        const idx = items.value.findIndex((x: any) => x.id === r.id)
+        if (idx !== -1) items.value[idx] = row
         await new Promise(res => setTimeout(res, 120))
       } catch (e) {
         clearTimeout(timeoutId)
