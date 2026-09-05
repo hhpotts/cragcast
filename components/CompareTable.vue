@@ -138,7 +138,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { reactive, computed, ref } from 'vue'
+import { reactive, computed, ref, watch } from 'vue'
 import { usePrefs } from '~/composables/usePrefs'
 import { useUnits } from '~/composables/useUnits'
 import { useCrags, type CragItem } from '~/composables/useCrags'
@@ -158,6 +158,26 @@ const prefs = usePrefs()
 function isExpanded(regionId: string) {
   return expandedRegions.value.has(regionId)
 }
+
+// This component isn't remounted when prefs change (only its `rows` prop changes),
+// so the expanded-crag cache above would otherwise keep showing forecast data
+// fetched under the *previous* dates/location/distance filter indefinitely.
+// Collapse everything on a real prefs change so re-expanding always re-fetches.
+const prefsSignature = computed(() => {
+  const w = prefs.where.value as any
+  return JSON.stringify({
+    lat: w?.lat ?? null,
+    lon: w?.lon ?? null,
+    min: prefs.minDriveMins.value,
+    max: Number.isFinite(prefs.maxDriveMins.value) ? prefs.maxDriveMins.value : 'inf',
+    dates: prefs.dates.value
+  })
+})
+watch(prefsSignature, () => {
+  expandedRegions.value = new Set()
+  expandedCrags.value = {}
+  expandedPending.value = {}
+})
 
 async function toggleExpand(regionId: string) {
   if (expandedRegions.value.has(regionId)) {

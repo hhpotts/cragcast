@@ -29,12 +29,14 @@ export function useRank() {
   const pending = ref(false)
   const error = ref<string | null>(null)
 
-  function cacheKey(p: PrefsSnapshot) {
+  function cacheKey(p: PrefsSnapshot, customCragIds: string[]) {
     const latKey = p.lat !== undefined && Number.isFinite(p.lat) ? String(p.lat) : 'na'
     const lonKey = p.lon !== undefined && Number.isFinite(p.lon) ? String(p.lon) : 'na'
     const minKey = p.minDriveMins > 0 ? String(p.minDriveMins) : '0'
     const distKey = Number.isFinite(p.maxDriveMins) ? String(p.maxDriveMins) : 'inf'
-    return `rank:${latKey}:${lonKey}:${minKey}-${distKey}:${p.dates.join(',')}`
+    // Include custom crags in the key so adding/removing one invalidates stale cache entries
+    const customKey = customCragIds.length ? [...customCragIds].sort().join('+') : 'none'
+    return `rank:${latKey}:${lonKey}:${minKey}-${distKey}:${p.dates.join(',')}:${customKey}`
   }
   function readCache(key: string): RankItem[] | null {
     if (!process.client) return null
@@ -66,8 +68,11 @@ export function useRank() {
       const pickedDates = params.dates
       if (!pickedDates.length) return
 
-      // Client cache: if present and fresh, load instantly
-      const key = cacheKey(params)
+      // Client cache: keyed to include the current custom crag set, since results
+      // are merged with custom crags below. A cache hit means both the region
+      // ranking AND the custom crags were already fetched together for this exact state.
+      const { crags } = useCustomCrags()
+      const key = cacheKey(params, crags.value.map(c => c.id))
       const cached = readCache(key)
       if (cached) {
         items.value = cached
@@ -96,7 +101,6 @@ export function useRank() {
       if (controller.signal.aborted) return
 
       // Also fetch custom crags and merge into results
-      const { crags } = useCustomCrags()
       if (crags.value.length) {
         const customResults = await Promise.allSettled(
           crags.value.map(async (crag) => {

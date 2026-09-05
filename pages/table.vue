@@ -43,8 +43,9 @@
 
 </template>
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { usePrefs, type PrefsSnapshot } from '~/composables/usePrefs'
+import { ref, computed, onMounted } from 'vue'
+import type { PrefsSnapshot } from '~/composables/usePrefs'
+import { useResultsPage } from '~/composables/useResultsPage'
 import { useUnits } from '~/composables/useUnits'
 import { useCustomCrags } from '~/composables/useCustomCrags'
 import { useAreas } from '~/composables/useAreas'
@@ -53,20 +54,16 @@ import CompareTable from '~/components/CompareTable.vue'
 import PrefsForm from '~/components/PrefsForm.vue'
 import ResultsHeader from '~/components/ResultsHeader.vue'
 import AddLocation from '~/components/AddLocation.vue'
-const prefs = usePrefs()
 const { crags: customCrags, add: addCustomCrag, remove: removeCustomCrag } = useCustomCrags()
 const { items: areaItems, fetchAreas } = useAreas()
 const { fetchCrags } = useCrags()
-const route = useRoute()
 const items = ref<any[]>([])
 const customItems = ref<any[]>([])
-const isAreaMode = computed(() => prefs.granularity.value === 'area')
-const isCragMode = computed(() => prefs.granularity.value === 'crag')
-const hasUrlDates = computed(() => typeof route.query.dates === 'string' && (route.query.dates as string).length > 0)
-const showPrefs = ref(!hasUrlDates.value)
 const shrink = ref(false)
 const searchQuery = ref('')
 const units = useUnits()
+const isAreaMode = computed(() => prefs.granularity.value === 'area')
+const isCragMode = computed(() => prefs.granularity.value === 'crag')
 const distanceLabel = computed(() => {
   const min = prefs.minDriveMins.value
   const max = prefs.maxDriveMins.value
@@ -94,7 +91,12 @@ const latestUpdatedAt = computed(() => {
   return all.reduce((latest: string, r: any) => r.updatedAt > latest ? r.updatedAt : latest, all[0].updatedAt)
 })
 const containerClass = computed(() => ['space-y-6', 'px-4', shrink.value ? 'max-w-[1000px] mx-auto' : 'max-w-none'])
-const hasPrefs = computed(() => prefs.where.value || prefs.dates.value?.length || prefs.maxDriveMins.value)
+const hasPrefs = computed(() => {
+  const hasLocation = !!prefs.where.value
+  const hasDates = (prefs.dates.value?.length ?? 0) > 0
+  const hasDistance = prefs.minDriveMins.value > 0 || Number.isFinite(prefs.maxDriveMins.value)
+  return hasLocation || hasDates || hasDistance
+})
 const customCragIds = computed(() => customCrags.value.map(c => c.id))
 // Favourites
 const favs = ref<string[]>([])
@@ -131,7 +133,6 @@ const filteredMainRows = computed(() => mainRows.value.filter(matchesSearch))
 
 // Simple client cache for compare
 const TTL_MS = 5 * 60 * 1000
-let routeWatchTimer: any = null
 
 // AbortController for the sequential loadCompare loop
 let compareController: AbortController | null = null
@@ -202,65 +203,33 @@ async function loadAllCustomCrags(snap: PrefsSnapshot) {
   }
 }
 
-onMounted(async () => {
-  loadFavs()
-  if (hasUrlDates.value && !items.value?.length) {
-    const snap = prefs.snapshot()
-    if (snap.granularity === 'area') {
-      await fetchAreas(snap)
-    } else {
-      const cached = readCache(snap)
-      if (cached) items.value = cached
-      else await loadCompare(snap)
-      if (snap.granularity !== 'crag') await loadAllCustomCrags(snap)
-    }
+async function loadResults(snap: PrefsSnapshot) {
+  if (snap.granularity === 'area') {
+    await fetchAreas(snap)
+  } else {
+    const cached = readCache(snap)
+    if (cached) items.value = cached
+    else await loadCompare(snap)
+    if (snap.granularity !== 'crag') await loadAllCustomCrags(snap)
   }
-})
+}
 
-// Handles browser back/forward, direct URL edits, and post-commit URL updates.
-watch(() => route.query, () => {
-  if (routeWatchTimer) clearTimeout(routeWatchTimer)
-  // Immediately clear stale results to prevent flash of out-of-range content
-  if (!showPrefs.value && hasUrlDates.value) {
+const { prefs, showPrefs, hasUrlDates, applyPrefs, clear } = useResultsPage({
+  hasExistingData: () => items.value.length > 0,
+  onClearResults: () => {
     items.value = []
     customItems.value = []
     areaItems.value = [] as any
-  }
-  routeWatchTimer = setTimeout(async () => {
-    const has = hasUrlDates.value
-    showPrefs.value = !has
-    if (has) {
-      const snap = prefs.snapshot()
-      if (snap.granularity === 'area') {
-        items.value = []
-        customItems.value = []
-        await fetchAreas(snap)
-      } else {
-        areaItems.value = [] as any
-        const cached = readCache(snap)
-        if (cached) items.value = cached
-        else await loadCompare(snap)
-        if (snap.granularity !== 'crag') await loadAllCustomCrags(snap)
-      }
-    } else {
-      items.value = []
-      customItems.value = []
-      areaItems.value = [] as any
-    }
-  }, 150)
-}, { deep: true })
+  },
+  onLoad: loadResults,
+  clearHref: '/table'
+})
 
-async function applyPrefs() {
-  showPrefs.value = false
-  items.value = []
-  customItems.value = []
-  areaItems.value = [] as any
-  await prefs.commit()
-  // Route watcher fires after commit and handles the fetch
-}
+onMounted(loadFavs)
+
 function clearTable() {
   if (compareController) compareController.abort()
-  if (process.client) window.location.replace('/table')
+  clear()
 }
 
 async function loadCompare(snap: PrefsSnapshot) {
@@ -317,17 +286,23 @@ async function loadCompare(snap: PrefsSnapshot) {
     // Region mode: prefill table with placeholder rows, then load each region
     items.value = regionList.map(r => ({ id: r.id, name: r.name, area: (r as any).area, cragCount: (r as any).cragCount || 0, pending: true }))
 
-    // 2) Fetch each region individually with a small delay to avoid rate limits
+    // 2) Fetch each region individually with a small delay to avoid rate limits.
+    // Each region gets its own timeout/controller so one slow region can't abort
+    // the whole loop — it only aborts that region's own request.
     for (const r of regionList) {
       if (controller.signal.aborted) return
 
-      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10s timeout per region
+      const regionController = new AbortController()
+      const onOuterAbort = () => regionController.abort()
+      controller.signal.addEventListener('abort', onOuterAbort)
+      const timeoutId = setTimeout(() => regionController.abort(), 10000) // 10s timeout per region
       try {
         const row = await $fetch<any>('/api/region', {
           params: { id: r.id, ...paramsBase },
-          signal: controller.signal
+          signal: regionController.signal
         })
         clearTimeout(timeoutId)
+        controller.signal.removeEventListener('abort', onOuterAbort)
         if (controller.signal.aborted) return
 
         const unlimited = !Number.isFinite(snap.maxDriveMins)
@@ -339,10 +314,10 @@ async function loadCompare(snap: PrefsSnapshot) {
           const idx = items.value.findIndex((x: any) => x.id === r.id)
           if (idx !== -1) items.value[idx] = row
         }
-        writeCache(snap)
         await new Promise(res => setTimeout(res, 120))
       } catch (e) {
         clearTimeout(timeoutId)
+        controller.signal.removeEventListener('abort', onOuterAbort)
         if (controller.signal.aborted) return
         const idx = items.value.findIndex((x: any) => x.id === r.id)
         if (idx !== -1) {
@@ -351,6 +326,10 @@ async function loadCompare(snap: PrefsSnapshot) {
       }
     }
   }
+
+  // Only cache a fully-settled list — never a partial one from an interrupted run —
+  // and never one superseded by a newer loadCompare() call in the meantime.
+  if (!controller.signal.aborted) writeCache(snap)
 
   if (compareController === controller) compareController = null
 }

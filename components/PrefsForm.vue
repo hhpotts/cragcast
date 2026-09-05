@@ -96,7 +96,21 @@ const hasValidLocation = computed(() => {
   return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 && name.length > 1
 })
 const isDisabled = computed(() => !mounted.value)
-const selectedWhenPreset = ref<'today'|'tomorrow'|'this-weekend'|'next-weekend'|'custom'>('this-weekend')
+// Reopening this form (e.g. via "Adjust") remounts it — seed the "when" selection
+// from the dates actually in effect, not a hardcoded default, so a previously
+// chosen preset/custom range isn't silently discarded by confirming unchanged.
+function detectWhenPreset(dates: string[]): 'today'|'tomorrow'|'this-weekend'|'next-weekend'|'custom' {
+  if (!dates.length) return 'this-weekend'
+  const matches = (p: 'today'|'tomorrow'|'this-weekend'|'next-weekend') =>
+    JSON.stringify(presetDates(p)) === JSON.stringify(dates)
+  if (matches('today')) return 'today'
+  if (matches('tomorrow')) return 'tomorrow'
+  if (matches('this-weekend')) return 'this-weekend'
+  if (matches('next-weekend')) return 'next-weekend'
+  return 'custom'
+}
+const initialDates = prefs.dates.value || []
+const selectedWhenPreset = ref<'today'|'tomorrow'|'this-weekend'|'next-weekend'|'custom'>(detectWhenPreset(initialDates))
 const selectedMax = ref<number>(prefs.maxDriveMins.value)
 const selectedGranularity = ref<'area'|'region'|'crag'>(prefs.granularity.value)
 const selectedLocation = ref<Location | null>(null)
@@ -111,8 +125,8 @@ const next7 = computed(() => {
   }
   return out
 })
-const customStart = ref<string>('')
-const customEnd = ref<string>('')
+const customStart = ref<string>(selectedWhenPreset.value === 'custom' ? (initialDates[0] || '') : '')
+const customEnd = ref<string>(selectedWhenPreset.value === 'custom' ? (initialDates[1] || initialDates[0] || '') : '')
 const customError = computed(() => {
   if (selectedWhenPreset.value !== 'custom') return ''
   // Allow submit with no dates or only one date selected

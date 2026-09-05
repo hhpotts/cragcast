@@ -43,6 +43,12 @@ const props = defineProps<{
 const emit = defineEmits<{ (e:'update:modelValue', v:boolean): void }>()
 const hasPrefs = computed(() => {
   const prefs = usePrefs()
-  return prefs.where.value || prefs.dates.value || prefs.maxDriveMins.value
+  // maxDriveMins.value defaults to Infinity (truthy) and dates.value defaults to []
+  // (also truthy) when unset, so this must check content, not raw truthiness —
+  // otherwise this is always true, even on a completely fresh visit.
+  const hasLocation = !!prefs.where.value
+  const hasDates = (prefs.dates.value?.length ?? 0) > 0
+  const hasDistance = prefs.minDriveMins.value > 0 || Number.isFinite(prefs.maxDriveMins.value)
+  return hasLocation || hasDates || hasDistance
 })
 </script>
