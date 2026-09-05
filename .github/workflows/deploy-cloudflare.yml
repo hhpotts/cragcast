@@ -158,19 +158,22 @@ jobs:
           node-version: "20"
 
       # worker-cron is a separate npm package (not part of the root pnpm
-      # workspace) with its own lockfile — installing here means wrangler is
-      # already present when wrangler-action runs, so it never has to guess
-      # a package manager itself. That auto-detection is what was failing:
-      # https://github.com/cloudflare/wrangler-action/issues/338
+      # workspace) with its own lockfile.
       - name: Install worker-cron dependencies
         working-directory: worker-cron
         run: npm ci
 
+      # Invoking wrangler directly (already installed above as a
+      # devDependency) rather than via cloudflare/wrangler-action:
+      # specifying wranglerVersion on that action forces it to always run
+      # its own install, whose package-manager auto-detection breaks in
+      # this repo's layout (a root pnpm-lock.yaml with no
+      # pnpm-workspace.yaml, and this directory as an unrelated npm
+      # package) — a known, unfixed upstream issue:
+      # https://github.com/cloudflare/wrangler-action/issues/338
       - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4'
-          workingDirectory: worker-cron
-          command: deploy
+        working-directory: worker-cron
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
