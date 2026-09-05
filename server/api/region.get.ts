@@ -1,5 +1,5 @@
 import { fetchForecastWithRetry } from "~/server/utils/forecast"
-import { regions } from "~/server/utils/regions"
+import { regions, getAreaName } from "~/server/utils/regions"
 import { getCragCountsByRegion } from "~/server/utils/crag-db"
 import { haversineKm, driveMinutesApprox } from "~/server/utils/distance"
 import { scoreRegion } from "~/server/utils/score"
@@ -74,7 +74,7 @@ export default defineEventHandler(async (event) => {
   return {
     id: region.id,
     name: region.name,
-    area: (region as any).area,
+    area: getAreaName(region.areaId),
     score,
     why,
     ...(warnings.length ? { warnings } : {}),
