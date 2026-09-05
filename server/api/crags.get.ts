@@ -60,6 +60,10 @@ export default defineEventHandler(async (event) => {
     if (hasHome) {
       const km = haversineKm({ lat, lon }, { lat: crag.lat, lon: crag.lon })
       distanceMins = driveMinutesApprox(km)
+
+      const unlimited = !Number.isFinite(maxDriveMins)
+      if (!unlimited && distanceMins > maxDriveMins) continue
+      if (minDriveMins > 0 && distanceMins < minDriveMins) continue
     }
 
     const { score: baseScore, why } = scoreRegion(cragForecast.mini, {

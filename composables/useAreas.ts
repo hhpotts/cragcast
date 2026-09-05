@@ -45,7 +45,13 @@ export function useAreas() {
 
       const res = await fetch(`/api/areas?${qp}`, { signal: controller.signal })
       if (controller.signal.aborted) return
-      items.value = await res.json()
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(text || `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      if (controller.signal.aborted) return
+      items.value = Array.isArray(data) ? data : []
     } catch (e: any) {
       if (controller.signal.aborted) return
       error.value = e?.message || 'Failed to fetch areas'

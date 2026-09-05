@@ -83,8 +83,9 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { usePrefs } from '~/composables/usePrefs'
+import { ref, computed } from 'vue'
+import type { PrefsSnapshot } from '~/composables/usePrefs'
+import { useResultsPage } from '~/composables/useResultsPage'
 import { useUnits } from '~/composables/useUnits'
 import { useRank } from '~/composables/useRank'
 import { useAreas } from '~/composables/useAreas'
@@ -95,11 +96,9 @@ import SkeletonCard from '~/components/SkeletonCard.vue'
 import RegionCard from '~/components/RegionCard.vue'
 import CragCard from '~/components/CragCard.vue'
 import ResultsHeader from '~/components/ResultsHeader.vue'
-const prefs = usePrefs()
 const { items: rankItems, pending: rankPending, fetchRank } = useRank()
 const { items: areaItems, pending: areaPending, fetchAreas } = useAreas()
 const { fetchCrags } = useCrags()
-const showPrefs = ref(true)
 const CARDS_PAGE_SIZE = 4
 const visibleCount = ref(CARDS_PAGE_SIZE)
 
@@ -117,14 +116,11 @@ const hasMoreCards = computed(() => {
   if (isCragMode.value) return cragItems.value.length > visibleCount.value
   return activeItems.value && activeItems.value.length > 1 && (visibleCount.value + 1) < activeItems.value.length
 })
-const route = useRoute()
 const latestUpdatedAt = computed(() => {
   const all = (activeItems.value || []).filter((r: any) => r.updatedAt)
   if (!all.length) return null
   return all.reduce((latest: string, r: any) => r.updatedAt > latest ? r.updatedAt : latest, all[0].updatedAt)
 })
-const hasUrlDates = computed(() => typeof route.query.dates === 'string' && route.query.dates.length > 0)
-let routeWatchTimer: any = null
 const labelWhen = computed(() => {
   const ds = (prefs.dates.value || []) as string[]
   if (!ds.length) return 'Dates'
@@ -145,7 +141,7 @@ const distanceLabel = computed(() => {
   return `max ${units.convertDistance(max)} ${label}`
 })
 
-async function fetchAllCrags(snap: ReturnType<typeof prefs.snapshot>) {
+async function fetchAllCrags(snap: PrefsSnapshot) {
   cragsPending.value = true
   cragItems.value = []
   try {
@@ -168,51 +164,21 @@ async function fetchAllCrags(snap: ReturnType<typeof prefs.snapshot>) {
   }
 }
 
-function fetchActive(snap: ReturnType<typeof prefs.snapshot>) {
+function fetchActive(snap: PrefsSnapshot) {
   if (snap.granularity === 'area') fetchAreas(snap)
   else if (snap.granularity === 'crag') fetchAllCrags(snap)
   else fetchRank(snap)
 }
 
-onMounted(() => {
-  showPrefs.value = !hasUrlDates.value
-  if (hasUrlDates.value && !activeItems.value?.length && !cragItems.value.length) {
-    fetchActive(prefs.snapshot())
-  }
-})
-
-watch(() => route.query, () => {
-  if (routeWatchTimer) clearTimeout(routeWatchTimer)
-  if (!showPrefs.value && hasUrlDates.value) {
+const { prefs, showPrefs, applyPrefs: savePrefs, clear: clearPrefs } = useResultsPage({
+  hasExistingData: () => !!(activeItems.value?.length) || !!cragItems.value.length,
+  onClearResults: () => {
     rankItems.value = [] as any
     areaItems.value = [] as any
     cragItems.value = []
-  }
-  routeWatchTimer = setTimeout(() => {
-    const has = hasUrlDates.value
-    showPrefs.value = !has
-    if (has) {
-      visibleCount.value = CARDS_PAGE_SIZE
-      fetchActive(prefs.snapshot())
-    } else {
-      rankItems.value = [] as any
-      areaItems.value = [] as any
-      cragItems.value = []
-      visibleCount.value = CARDS_PAGE_SIZE
-    }
-  }, 150)
-}, { deep: true })
-
-async function savePrefs() {
-  showPrefs.value = false
-  visibleCount.value = CARDS_PAGE_SIZE
-  rankItems.value = [] as any
-  areaItems.value = [] as any
-  cragItems.value = []
-  await prefs.commit()
-  // Route watcher fires after commit and handles the fetch
-}
-function clearPrefs() {
-  if (process.client) window.location.replace('/')
-}
+    visibleCount.value = CARDS_PAGE_SIZE
+  },
+  onLoad: fetchActive,
+  clearHref: '/'
+})
 </script>
