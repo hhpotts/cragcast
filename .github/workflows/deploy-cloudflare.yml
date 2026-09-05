@@ -152,6 +152,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # worker-cron is a separate npm package (not part of the root pnpm
+      # workspace) with its own lockfile — installing here means wrangler is
+      # already present when wrangler-action runs, so it never has to guess
+      # a package manager itself. That auto-detection is what was failing:
+      # https://github.com/cloudflare/wrangler-action/issues/338
+      - name: Install worker-cron dependencies
+        working-directory: worker-cron
+        run: npm ci
+
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
