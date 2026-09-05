@@ -7,6 +7,7 @@ import { parseDatesParam } from "~/server/utils/dates"
 import { dailyIcons } from "~/server/utils/icons"
 import { checkWarnings } from "~/server/utils/warnings"
 import { avg, sum, circularMeanDeg, degToCompass } from "~/server/utils/server-utils"
+import { getRecentRainfall, sumRecentDays, lookbackDaysForRocks } from "~/server/utils/rainfall-history"
 
 export default defineEventHandler(async (event) => {
   const q = getQuery(event)
@@ -33,15 +34,20 @@ export default defineEventHandler(async (event) => {
   }
 
   // Single-region endpoint: more retries are acceptable; throw on final failure
-  const out = await fetchForecastWithRetry(event, pt.lat, pt.lon, dates, {
-    attempts: 4, timeoutMs: 3500, backoffMs: 300, tag: 'region', throwOnFailure: true
-  })
+  const [out, rainHistory] = await Promise.all([
+    fetchForecastWithRetry(event, pt.lat, pt.lon, dates, {
+      attempts: 4, timeoutMs: 3500, backoffMs: 300, tag: 'region', throwOnFailure: true
+    }),
+    getRecentRainfall(event, pt.lat, pt.lon)
+  ])
   const { mini, updatedAt } = out!
+  const recentRainMm = sumRecentDays(rainHistory, lookbackDaysForRocks(region.rock))
   const { score, why } = scoreRegion(mini, {
     rocks: region.rock,
     distanceMins: Number.isFinite(distanceMins) ? distanceMins : 0,
     minDriveMins,
-    maxDriveMins
+    maxDriveMins,
+    recentRainMm
   })
 
   const avgTempC = Math.round(avg(mini.temp) * 10) / 10
