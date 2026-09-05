@@ -16,6 +16,15 @@ export function scoreRegion(mini: MiniSeries, opts: {
   distanceMins: number
   minDriveMins?: number
   maxDriveMins: number
+  /**
+   * Rainfall (mm) in the days before the forecast window, summed over
+   * whatever lookback is relevant to opts.rocks (see rainfall-history.ts —
+   * e.g. 2 days for gritstone's 48h rule, 7 for rhyolite). The forecast
+   * alone only says what happens *during* the requested dates; this
+   * captures whether the rock has actually had time to dry out beforehand.
+   * Optional and defaults to 0 so existing callers are unaffected.
+   */
+  recentRainMm?: number
 }): { score: number; why: string[] } {
   const rain = sum(mini.rainMm)
   const pop = avg(mini.pop)
@@ -23,8 +32,13 @@ export function scoreRegion(mini: MiniSeries, opts: {
   const gust = max(mini.gust)
   const temp = avg(mini.temp)
   const cloud = avg(mini.cloud)
+  const recentRainMm = opts.recentRainMm ?? 0
 
-  const drynessPct = Math.max(0, 100 - (rain + pop * 0.6)) // 40%
+  // Capped well below the full 40-point dryness budget so a very wet spell
+  // can meaningfully drag the score down without swamping the forecast's
+  // own (more immediately relevant) rain/probability signal.
+  const recentRainPenalty = Math.min(25, recentRainMm * 0.8)
+  const drynessPct = Math.max(0, 100 - (rain + pop * 0.6) - recentRainPenalty) // 40%
   let drynessScore = (drynessPct / 100) * 40
 
   let windPenalty = 0
@@ -56,6 +70,11 @@ export function scoreRegion(mini: MiniSeries, opts: {
   const finalScore = Math.round(Math.max(0, Math.min(100, baseScore * distMultiplier)))
 
   const why: string[] = []
+  // Recent (pre-forecast) rain takes priority when significant — it's the
+  // difference between "dry forecast" and "still saturated from Tuesday".
+  if (recentRainMm >= 20) why.push('Likely wet from recent rain')
+  else if (recentRainMm >= 10) why.push('Recently rained')
+
   // Precipitation summary (use both total precip and max probability to avoid conflicts with icons)
   const rainSum = sum(mini.rainMm)
   const popMax = max(mini.pop)

@@ -1,4 +1,5 @@
 import { fetchForecastWithRetry } from "~/server/utils/forecast"
+import { getRecentRainfall, sumRecentDays, lookbackDaysForRocks } from "~/server/utils/rainfall-history"
 import { areas, regions } from "~/server/utils/regions"
 import { haversineKm, driveMinutesApprox } from "~/server/utils/distance"
 import { scoreRegion } from "~/server/utils/score"
@@ -42,10 +43,17 @@ export default defineEventHandler(async (event) => {
     candidateAreas.push({ area, distanceMins })
   }
 
-  // Fetch forecasts for all area centroids in parallel
-  const forecasts = await parallel(candidateAreas, ({ area }) =>
-    fetchForecastWithRetry(event, area.lat, area.lon, dates, { attempts: 2, timeoutMs: 4000, backoffMs: 200, tag: 'areas' })
-  , 8)
+  // Fetch forecasts and recent-rainfall history for all area centroids in
+  // parallel; the two are independent so run both batches concurrently too.
+  const [forecasts, rainHistories] = await Promise.all([
+    parallel(candidateAreas, ({ area }) =>
+      fetchForecastWithRetry(event, area.lat, area.lon, dates, { attempts: 2, timeoutMs: 4000, backoffMs: 200, tag: 'areas' })
+    , 8),
+    // Lower concurrency than the forecast batch above — the two run at the
+    // same time, and doubling peak concurrent requests to Open-Meteo across
+    // both batches is what triggers their rate limit during cache-miss bursts.
+    parallel(candidateAreas, ({ area }) => getRecentRainfall(event, area.lat, area.lon), 4)
+  ])
 
   const results: any[] = []
   for (let i = 0; i < candidateAreas.length; i++) {
@@ -55,7 +63,8 @@ export default defineEventHandler(async (event) => {
 
     const { mini, updatedAt } = out
     const rocks = Array.from(rocksByArea[area.name] || [])
-    const { score, why } = scoreRegion(mini, { rocks, distanceMins, minDriveMins, maxDriveMins })
+    const recentRainMm = sumRecentDays(rainHistories[i], lookbackDaysForRocks(rocks))
+    const { score, why } = scoreRegion(mini, { rocks, distanceMins, minDriveMins, maxDriveMins, recentRainMm })
 
     const avgTempC = Math.round(avg(mini.temp) * 10) / 10
     const avgWindMph = Math.round(avg(mini.wind) * 10) / 10

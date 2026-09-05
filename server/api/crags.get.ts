@@ -1,4 +1,5 @@
 import { fetchForecastWithRetry } from "~/server/utils/forecast"
+import { getRecentRainfall, sumRecentDays, lookbackDaysForRocks } from "~/server/utils/rainfall-history"
 import { regions } from "~/server/utils/regions"
 import { getCragsByRegion } from "~/server/utils/crag-db"
 import { haversineKm, driveMinutesApprox } from "~/server/utils/distance"
@@ -39,14 +40,25 @@ export default defineEventHandler(async (event) => {
   }
   const uniqueCoords = [...keyToCoord.entries()].map(([key, coord]) => ({ key, ...coord }))
 
-  // Fetch forecasts for all unique crag coordinates in parallel
-  const forecastResults = await parallel(uniqueCoords, ({ lat: cLat, lon: cLon }) =>
-    fetchForecastWithRetry(event, cLat, cLon, dates, { attempts: 3, timeoutMs: 3500, backoffMs: 300, tag: 'crags' })
-  , 8)
+  // Fetch forecasts and recent-rainfall history for all unique crag
+  // coordinates in parallel; the two are independent so run both batches
+  // concurrently too. One rainfall fetch per unique coordinate (not per
+  // crag, and not per rock type) covers every rock type at that spot.
+  const [forecastResults, rainHistoryResults] = await Promise.all([
+    parallel(uniqueCoords, ({ lat: cLat, lon: cLon }) =>
+      fetchForecastWithRetry(event, cLat, cLon, dates, { attempts: 3, timeoutMs: 3500, backoffMs: 300, tag: 'crags' })
+    , 8),
+    // Lower concurrency than the forecast batch above — the two run at the
+    // same time, and doubling peak concurrent requests to Open-Meteo across
+    // both batches is what triggers their rate limit during cache-miss bursts.
+    parallel(uniqueCoords, ({ lat: cLat, lon: cLon }) => getRecentRainfall(event, cLat, cLon), 4)
+  ])
 
   const forecastMap = new Map<string, any>()
+  const rainHistoryMap = new Map<string, any>()
   for (let i = 0; i < uniqueCoords.length; i++) {
     forecastMap.set(uniqueCoords[i].key, forecastResults[i])
+    rainHistoryMap.set(uniqueCoords[i].key, rainHistoryResults[i])
   }
 
   // Score each crag using its own forecast and coordinates
@@ -66,11 +78,13 @@ export default defineEventHandler(async (event) => {
       if (minDriveMins > 0 && distanceMins < minDriveMins) continue
     }
 
+    const recentRainMm = sumRecentDays(rainHistoryMap.get(key), lookbackDaysForRocks(crag.rock))
     const { score: baseScore, why } = scoreRegion(cragForecast.mini, {
       rocks: crag.rock,
       distanceMins,
       minDriveMins,
-      maxDriveMins
+      maxDriveMins,
+      recentRainMm
     })
 
     const { score, modifiers } = scoreCrag(baseScore, cragForecast.mini, {

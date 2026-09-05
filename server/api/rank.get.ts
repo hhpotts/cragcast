@@ -1,4 +1,5 @@
 import { getForecast, fetchForecastWithRetry } from "~/server/utils/forecast"
+import { getRecentRainfall, sumRecentDays, lookbackDaysForRocks } from "~/server/utils/rainfall-history"
 import { regions } from "~/server/utils/regions"
 import { getCragCountsByRegion } from "~/server/utils/crag-db"
 import { haversineKm, driveMinutesApprox } from "~/server/utils/distance"
@@ -45,10 +46,17 @@ export default defineEventHandler(async (event) => {
     candidateRegions.push({ region: r, distanceMins, pt })
   }
 
-  // Fetch forecasts in parallel with concurrency limit
-  const forecasts = await parallel(candidateRegions, ({ pt }) =>
-    fetchForecastWithRetry(event, pt.lat, pt.lon, dates, { attempts: 2, timeoutMs: 4000, backoffMs: 200, tag: 'rank' })
-  , 8)
+  // Fetch forecasts and recent-rainfall history in parallel with a concurrency
+  // limit each; the two are independent so run both batches concurrently too.
+  const [forecasts, rainHistories] = await Promise.all([
+    parallel(candidateRegions, ({ pt }) =>
+      fetchForecastWithRetry(event, pt.lat, pt.lon, dates, { attempts: 2, timeoutMs: 4000, backoffMs: 200, tag: 'rank' })
+    , 8),
+    // Lower concurrency than the forecast batch above — the two run at the
+    // same time, and doubling peak concurrent requests to Open-Meteo across
+    // both batches is what triggers their rate limit during cache-miss bursts.
+    parallel(candidateRegions, ({ pt }) => getRecentRainfall(event, pt.lat, pt.lon), 4)
+  ])
 
   // Get crag counts from D1
   const cragCounts = await getCragCountsByRegion(event)
@@ -63,12 +71,14 @@ export default defineEventHandler(async (event) => {
     if (!out) continue
 
     const { mini, updatedAt } = out
+    const recentRainMm = sumRecentDays(rainHistories[i], lookbackDaysForRocks(r.rock))
 
     const { score, why } = scoreRegion(mini, {
       rocks: r.rock,
       distanceMins: Number.isFinite(distanceMins) ? distanceMins : 0,
       minDriveMins,
-      maxDriveMins
+      maxDriveMins,
+      recentRainMm
     })
 
     const locParam = `${encodeURIComponent(String(pt.lat))}%2C+${encodeURIComponent(String(pt.lon))}`
