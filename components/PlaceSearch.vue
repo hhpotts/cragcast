@@ -14,7 +14,7 @@
 
       <span class="text-sm text-gray-500 mt-1 px-2">|</span>
 
-      <UButton variant="outline" :title="'Use browser location'" @click="useGeo">
+      <UButton variant="outline" :loading="geoLoading" :disabled="geoLoading" :title="'Use browser location'" @click="useGeo">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
@@ -47,7 +47,8 @@
         </ul>
       </div>
     </div>
-    <p v-if="!query" class="text-sm text-gray-500">If you don't select a location results will be UK-wide.</p>
+    <p v-if="geoError" class="text-sm text-red-500">{{ geoError }}</p>
+    <p v-else-if="!query" class="text-sm text-gray-500">If you don't select a location results will be UK-wide.</p>
   </div>
 </template>
 <script setup lang="ts">
@@ -64,6 +65,8 @@ const inputRef = ref<any>(null)
 const suggestions = ref<{ fullName: string; shortName: string; lat: number; lon: number }[]>([])
 const loading = ref(false)
 const allowSuggest = ref(false) // only show dropdown due to user typing
+const geoLoading = ref(false)
+const geoError = ref('')
 
 function normalizeName(raw: string, address?: any): string {
   // Prefer structured fields if available
@@ -77,32 +80,55 @@ function normalizeName(raw: string, address?: any): string {
   return name
 }
 
-async function useGeo() {
-  console.log('[PlaceSearch] useGeo clicked')
-  if (!('geolocation' in navigator)) return
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    const { latitude, longitude } = pos.coords
-    const lat4 = Number(latitude.toFixed(4))
-    const lon4 = Number(longitude.toFixed(4))
-    let friendly = 'My location'
-    try {
-      const url = new URL('https://nominatim.openstreetmap.org/reverse')
-      url.searchParams.set('lat', String(lat4))
-      url.searchParams.set('lon', String(lon4))
-      url.searchParams.set('format', 'jsonv2')
-      const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } })
-      const data = await res.json()
-      if (data) friendly = normalizeName(String(data.display_name || ''), data.address)
-    } catch (e) {}
-    const nameShort = normalizeName(friendly)
-    placeName.value = nameShort
-    query.value = nameShort
-    allowSuggest.value = false
-    suggestions.value = []
-    console.log('[PlaceSearch] geolocation success', { lat4, lon4, nameShort })
-    emit('picked', { lat: lat4, lon: lon4, name: nameShort })
-    console.log('[PlaceSearch] emitted picked (geo)')
-  })
+function useGeo() {
+  geoError.value = ''
+  if (!('geolocation' in navigator)) {
+    geoError.value = 'Your browser doesn\'t support location'
+    return
+  }
+  // Geolocation also silently does nothing on a non-secure origin (plain
+  // http:// other than localhost) — browsers block it there entirely.
+  if (typeof window !== 'undefined' && window.isSecureContext === false) {
+    geoError.value = 'Location needs a secure (https) connection'
+    return
+  }
+
+  geoLoading.value = true
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const { latitude, longitude } = pos.coords
+      const lat4 = Number(latitude.toFixed(4))
+      const lon4 = Number(longitude.toFixed(4))
+      let friendly = 'My location'
+      try {
+        const url = new URL('https://nominatim.openstreetmap.org/reverse')
+        url.searchParams.set('lat', String(lat4))
+        url.searchParams.set('lon', String(lon4))
+        url.searchParams.set('format', 'jsonv2')
+        const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } })
+        const data = await res.json()
+        if (data) friendly = normalizeName(String(data.display_name || ''), data.address)
+      } catch (e) { /* fall back to the generic "My location" name */ }
+      const nameShort = normalizeName(friendly)
+      placeName.value = nameShort
+      query.value = nameShort
+      allowSuggest.value = false
+      suggestions.value = []
+      geoLoading.value = false
+      emit('picked', { lat: lat4, lon: lon4, name: nameShort })
+    },
+    (err) => {
+      geoLoading.value = false
+      if (err.code === err.PERMISSION_DENIED) {
+        geoError.value = 'Location permission denied — check your browser/site settings'
+      } else if (err.code === err.TIMEOUT) {
+        geoError.value = 'Getting your location timed out — try again'
+      } else {
+        geoError.value = 'Couldn\'t get your location'
+      }
+    },
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 5 * 60 * 1000 }
+  )
 }
 
 const fetchSuggest = useDebounceFn(async () => {
