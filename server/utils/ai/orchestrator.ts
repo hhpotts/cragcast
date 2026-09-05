@@ -14,6 +14,28 @@ import { retrieveKnowledge } from './rag'
 
 const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 const MAX_TOOL_ROUNDS = 5
+// Without an explicit cap, Workers AI's default output length was cutting
+// responses off mid-sentence — this gives comfortable headroom for a full
+// multi-paragraph answer while still bounding cost.
+const MAX_TOKENS = 700
+
+// Per-turn cap on calls to the same tool, to stop the model retrying the same
+// tool with slightly different (often guessed) arguments — e.g. calling
+// rank_regions 3x with different guessed coordinates for one question, or
+// lookup_crag 4x for a 3-crag comparison. Tools that summarise the whole
+// dataset in one call (rank_regions, get_region_info) should never need more
+// than one call per turn; per-entity tools get some headroom for legitimate
+// multi-item comparisons.
+const MAX_CALLS_PER_TOOL: Record<string, number> = {
+  rank_regions: 1,
+  get_region_info: 1,
+  search_crags: 2,
+  get_mwis_forecast: 3,
+  lookup_crag: 4,
+  get_crag_score: 4,
+  get_weather_forecast: 4
+}
+const DEFAULT_MAX_CALLS_PER_TOOL = 4
 
 type OrchestratorCallbacks = {
   onToken?: (token: string) => void
@@ -44,7 +66,8 @@ export async function runOrchestrator(
   ]
 
   let fullResponse = ''
-  const calledTools = new Set<string>() // track tool+args combos to detect loops
+  const calledTools = new Set<string>() // track tool+args combos to detect exact repeats
+  const toolCallCounts = new Map<string, number>() // track calls per tool name to cap retries
 
   // Retrieve relevant climbing knowledge via RAG (runs in parallel with first LLM call)
   const lastUserMsg = userMessages.filter(m => m.role === 'user').pop()?.content || ''
@@ -65,6 +88,7 @@ export async function runOrchestrator(
       response = await ai.run(MODEL, {
         messages,
         temperature: 0,
+        max_tokens: MAX_TOKENS,
         ...(isLastRound ? {} : { tools: toolDefinitions })
       })
     } catch (e: any) {
@@ -108,7 +132,18 @@ export async function runOrchestrator(
           // Already called this exact tool — skip and force response
           continue
         }
+
+        // Cap retries with different args for the same tool (e.g. the model
+        // re-guessing coordinates for rank_regions, or re-trying lookup_crag).
+        const toolCap = MAX_CALLS_PER_TOOL[toolName] ?? DEFAULT_MAX_CALLS_PER_TOOL
+        const toolCount = toolCallCounts.get(toolName) || 0
+        if (toolCount >= toolCap) {
+          console.log(`[orchestrator] skipping ${toolName}: call cap reached (${toolCount}/${toolCap})`)
+          continue
+        }
+
         calledTools.add(callKey)
+        toolCallCounts.set(toolName, toolCount + 1)
 
         callbacks.onToolCall?.(toolName)
 
@@ -132,7 +167,7 @@ export async function runOrchestrator(
         })
         // Run one more time without tools to force text
         try {
-          response = await ai.run(MODEL, { messages, temperature: 0 })
+          response = await ai.run(MODEL, { messages, temperature: 0, max_tokens: MAX_TOKENS })
           const forced = response?.response || ''
           if (forced) {
             fullResponse = forced
@@ -183,7 +218,7 @@ export async function runOrchestrator(
         })
         knowledgeContext = ''
         try {
-          const refined = await ai.run(MODEL, { messages, temperature: 0 })
+          const refined = await ai.run(MODEL, { messages, temperature: 0, max_tokens: MAX_TOKENS })
           const refinedText = refined?.response || textResponse
           fullResponse = refinedText
           callbacks.onToken?.(refinedText)
@@ -208,7 +243,7 @@ export async function runOrchestrator(
         role: 'user',
         content: '[System: Please respond to the user now based on any data you have gathered. If you could not find the information, say so.]'
       })
-      const fallback = await ai.run(MODEL, { messages, temperature: 0 })
+      const fallback = await ai.run(MODEL, { messages, temperature: 0, max_tokens: MAX_TOKENS })
       const text = fallback?.response || ''
       if (text) {
         fullResponse = text
