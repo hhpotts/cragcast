@@ -4,6 +4,7 @@
  */
 
 import { ref, onUnmounted } from 'vue'
+import { usePrefs } from './usePrefs'
 
 export type ChatMsg = {
   id: string
@@ -34,6 +35,7 @@ export function useChat() {
   const isStreaming = ref(false)
   const error = ref<string | null>(null)
   let thinkingTimer: ReturnType<typeof setInterval> | null = null
+  const prefs = usePrefs()
 
   function stopThinking() {
     if (thinkingTimer) {
@@ -85,6 +87,18 @@ export function useChat() {
       content: m.content
     }))
 
+    // Include the user's saved location/dates so the model doesn't have to
+    // guess coordinates for vague queries like "where should I climb near me".
+    const snap = prefs.snapshot()
+    const context = {
+      lat: snap.lat,
+      lon: snap.lon,
+      name: snap.name,
+      dates: snap.dates,
+      minDriveMins: snap.minDriveMins,
+      maxDriveMins: Number.isFinite(snap.maxDriveMins) ? snap.maxDriveMins : undefined
+    }
+
     // Add placeholder assistant message
     const assistantMsg = addMessage('assistant', '')
     assistantMsg.streaming = true
@@ -98,7 +112,7 @@ export function useChat() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages })
+        body: JSON.stringify({ messages: apiMessages, context })
       })
 
       if (!res.ok) {

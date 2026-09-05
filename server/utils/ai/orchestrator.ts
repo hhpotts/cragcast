@@ -7,7 +7,7 @@
  * the model understands reliably.
  */
 
-import type { ChatMessage, ToolCall } from './types'
+import type { ChatMessage, ToolCall, UserContext } from './types'
 import { buildSystemPrompt } from './system-prompt'
 import { toolDefinitions, executeTool } from './tools'
 import { retrieveKnowledge } from './rag'
@@ -52,9 +52,10 @@ export async function runOrchestrator(
   ai: any,
   event: any,
   userMessages: ChatMessage[],
+  userContext: UserContext | undefined,
   callbacks: OrchestratorCallbacks
 ): Promise<string> {
-  const systemPrompt = buildSystemPrompt()
+  const systemPrompt = buildSystemPrompt(userContext)
 
   // Build the full message history — all content must be strings
   const messages: Array<{ role: string; content: string }> = [
