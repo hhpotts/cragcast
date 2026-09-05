@@ -1,5 +1,6 @@
 name = "cragcast"
 compatibility_date = "2024-09-19"
+account_id = "89091181a832a880b24a114f66337b35"
 
 # Workers AI binding for conversational AI
 [ai]
@@ -10,6 +11,13 @@ binding = "AI"
 binding = "CRAG_DB"
 database_name = "cragcast-crags"
 database_id = "c025a032-20eb-4505-bf22-7875f4ae4ad8"
+
+# KV namespace for forecast/MWIS caching (server/utils/forecast.ts looks for
+# env.CRAGCAST or env.CLIMB_KV). This namespace already existed in the account
+# but was never bound here, so this cache has been silently inactive.
+[[kv_namespaces]]
+binding = "CRAGCAST"
+id = "0e41b5da5b54488a81afc7e40b6b9d8c"
 
 # Vectorize index for RAG (climbing knowledge + semantic crag search)
 [[vectorize]]
