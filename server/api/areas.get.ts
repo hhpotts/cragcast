@@ -18,14 +18,15 @@ export default defineEventHandler(async (event) => {
 
   const dates = parseDatesParam((q.dates as string) || '', 'next-weekend')
 
-  // Collect rock types and region count per area (by area name)
+  // Collect rock types and region count per area (by area id, never by name —
+  // area display names change, e.g. localisation, so ids are the only stable key)
   const rocksByArea: Record<string, Set<string>> = {}
   const regionCountsByArea: Record<string, number> = {}
   for (const r of regions) {
-    if (!r.area) continue
-    if (!rocksByArea[r.area]) rocksByArea[r.area] = new Set()
-    for (const rock of r.rock) rocksByArea[r.area].add(rock)
-    regionCountsByArea[r.area] = (regionCountsByArea[r.area] || 0) + 1
+    if (!r.areaId) continue
+    if (!rocksByArea[r.areaId]) rocksByArea[r.areaId] = new Set()
+    for (const rock of r.rock) rocksByArea[r.areaId].add(rock)
+    regionCountsByArea[r.areaId] = (regionCountsByArea[r.areaId] || 0) + 1
   }
 
   // Pre-filter areas by distance
@@ -62,7 +63,7 @@ export default defineEventHandler(async (event) => {
     if (!out) continue
 
     const { mini, updatedAt } = out
-    const rocks = Array.from(rocksByArea[area.name] || [])
+    const rocks = Array.from(rocksByArea[area.id] || [])
     const recentRainMm = sumRecentDays(rainHistories[i], lookbackDaysForRocks(rocks))
     const { score, why } = scoreRegion(mini, { rocks, distanceMins, minDriveMins, maxDriveMins, recentRainMm })
 
@@ -95,7 +96,7 @@ export default defineEventHandler(async (event) => {
       avgWindDir,
       totalRainMm,
       links,
-      regionCount: regionCountsByArea[area.name] || 0
+      regionCount: regionCountsByArea[area.id] || 0
     })
   }
 

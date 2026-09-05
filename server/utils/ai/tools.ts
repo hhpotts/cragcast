@@ -7,7 +7,7 @@
 import type { ToolDefinition } from './types'
 import { fetchForecastWithRetry, kvFromEvent } from '../forecast'
 import { getCragsByRegion, searchCragByName } from '../crag-db'
-import { regions, areas } from '../regions'
+import { regions, areas, getAreaName } from '../regions'
 import { scoreRegion, scoreCrag } from '../score'
 import { haversineKm, driveMinutesApprox } from '../distance'
 import { parseDatesParam } from '../dates'
@@ -331,7 +331,7 @@ async function executeRankRegions(args: Record<string, any>, ctx: ToolContext): 
     ranked.push({
       id: r.id,
       name: r.name,
-      area: r.area,
+      area: getAreaName(r.areaId),
       score,
       why,
       rock: r.rock,
@@ -490,7 +490,7 @@ function executeGetRegionInfo(args: Record<string, any>): string {
     return JSON.stringify({
       id: r.id,
       name: r.name,
-      area: r.area,
+      area: getAreaName(r.areaId),
       rock: r.rock,
       tags: r.tags,
       coordinates: r.points[0],
@@ -501,7 +501,7 @@ function executeGetRegionInfo(args: Record<string, any>): string {
   // List all regions grouped by area
   const grouped: Record<string, Array<{ id: string; name: string; rock: string[] }>> = {}
   for (const r of regions) {
-    const area = r.area || 'Other'
+    const area = getAreaName(r.areaId) || 'Other'
     if (!grouped[area]) grouped[area] = []
     grouped[area].push({ id: r.id, name: r.name, rock: r.rock })
   }

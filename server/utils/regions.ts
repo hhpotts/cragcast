@@ -1,7 +1,8 @@
 export type Region = {
   id: string
   name: string
-  area?: string
+  /** Stable reference to an Area.id — never match/display areas by name string. */
+  areaId?: string
   points: { lat: number; lon: number }[]
   rock: string[]
   tags?: string[]
@@ -20,6 +21,11 @@ export type Area = {
   lon: number
 }
 
+/** Display name for a region's parent area, looked up by id (never store this as a duplicated string). */
+export function getAreaName(areaId?: string): string | undefined {
+  return areaId ? areas.find(a => a.id === areaId)?.name : undefined
+}
+
 // Representative centroid for each area (average of constituent region points)
 export const areas: Area[] = [
   { id: 'peak-district',         name: 'Peak District',           lat: 53.40, lon: -1.95 },
@@ -27,13 +33,13 @@ export const areas: Area[] = [
   { id: 'lake-district',         name: 'Lake District',           lat: 54.47, lon: -3.11 },
   { id: 'yorkshire',             name: 'Yorkshire',               lat: 53.97, lon: -1.82 },
   { id: 'northumberland',        name: 'Northumberland',          lat: 55.27, lon: -1.93 },
-  { id: 'pembrokeshire',         name: 'Pembrokeshire',           lat: 51.62, lon: -5.00 },
+  { id: 'pembrokeshire',         name: 'Pembrokeshire (Sir Benfro)', lat: 51.62, lon: -5.00 },
   { id: 'south-wales',           name: 'South Wales',             lat: 51.65, lon: -3.60 },
   { id: 'south-west-england',    name: 'South West England',      lat: 50.81, lon: -4.22 },
   { id: 'south-coast-england',   name: 'South Coast England',     lat: 50.75, lon: -1.41 },
-  { id: 'scotland-nw-highlands', name: 'NW Highlands & Skye',     lat: 57.65, lon: -5.60 },
-  { id: 'scotland-glencoe',      name: 'Ben Nevis & Glen Coe',    lat: 56.80, lon: -4.90 },
-  { id: 'scotland-cairngorms',   name: 'Cairngorms & East Scotland', lat: 57.10, lon: -2.90 },
+  { id: 'scotland-nw-highlands', name: 'NW Highlands & Skye (An t-Eilean Sgitheanach)', lat: 57.65, lon: -5.60 },
+  { id: 'scotland-glencoe',      name: 'Beinn Nibheis (Ben Nevis) & Gleann Comhann (Glen Coe)', lat: 56.80, lon: -4.90 },
+  { id: 'scotland-cairngorms',   name: 'Am Monadh Ruadh (Cairngorms) & East Scotland', lat: 57.10, lon: -2.90 },
   { id: 'scotland-central',      name: 'Central Scotland',        lat: 55.90, lon: -3.60 },
 ]
 
@@ -42,7 +48,7 @@ export const regions: Region[] = [
   {
     id: "peak-n",
     name: "North Peak",
-    area: "Peak District",
+    areaId: "peak-district",
     points: [{ lat: 53.45, lon: -1.88 }],
     rock: ["grit"],
     tags: ["moorland", "exposed"],
@@ -51,7 +57,7 @@ export const regions: Region[] = [
   {
     id: "peak-c",
     name: "Central Peak",
-    area: "Peak District",
+    areaId: "peak-district",
     points: [{ lat: 53.34, lon: -1.63 }],
     rock: ["grit", "limestone"],
     tags: ["quick-dry"],
@@ -60,7 +66,7 @@ export const regions: Region[] = [
   {
     id: "peak-sw",
     name: "South West Peak",
-    area: "Peak District",
+    areaId: "peak-district",
     points: [{ lat: 53.17, lon: -2.03 }],
     rock: ["grit"],
     tags: ["quick-dry", "wind-exposed"],
@@ -69,7 +75,7 @@ export const regions: Region[] = [
   {
     id: "peak-se",
     name: "South East Peak",
-    area: "Peak District",
+    areaId: "peak-district",
     points: [{ lat: 53.25, lon: -1.61 }],
     rock: ["grit"],
     tags: [],
@@ -78,7 +84,7 @@ export const regions: Region[] = [
   {
     id: "chew",
     name: "Chew Valley",
-    area: "Peak District",
+    areaId: "peak-district",
     points: [{ lat: 53.53, lon: -1.99 }],
     rock: ["grit"],
     external: { metOfficeId: "gcw8dkf8n", bbcId: "2647974" }
@@ -86,7 +92,7 @@ export const regions: Region[] = [
   {
     id: "lancs-quarries",
     name: "Lancashire Quarries",
-    area: "Peak District",
+    areaId: "peak-district",
     points: [{ lat: 53.65, lon: -2.55 }],
     rock: ["quarried grit"],
     external: { metOfficeId: "gcw1hpk10", bbcId: "2653086" }
@@ -95,8 +101,8 @@ export const regions: Region[] = [
   // --- North Wales ---
   {
     id: "nwales-n",
-    name: "Snowdonia North",
-    area: "North Wales",
+    name: "Eryri (Snowdonia) North",
+    areaId: "north-wales",
     points: [{ lat: 53.12, lon: -4.05 }],
     rock: ["rhyolite", "slate"],
     tags: ["mountain"],
@@ -104,8 +110,8 @@ export const regions: Region[] = [
   },
   {
     id: "nwales-s",
-    name: "Snowdonia South",
-    area: "North Wales",
+    name: "Eryri (Snowdonia) South",
+    areaId: "north-wales",
     points: [{ lat: 52.95, lon: -3.94 }],
     rock: ["rhyolite", "slate"],
     tags: ["mountain"],
@@ -114,7 +120,7 @@ export const regions: Region[] = [
   {
     id: "nwales-coast",
     name: "Coastal (Gogarth & Ormes)",
-    area: "North Wales",
+    areaId: "north-wales",
     points: [{ lat: 53.31, lon: -4.63 }],
     rock: ["limestone"],
     tags: ["sea-cliff"],
@@ -123,7 +129,7 @@ export const regions: Region[] = [
   {
     id: "nwales-clwyd",
     name: "Clwyd Limestone",
-    area: "North Wales",
+    areaId: "north-wales",
     points: [{ lat: 53.05, lon: -3.16 }],
     rock: ["limestone"],
     tags: [],
@@ -134,7 +140,7 @@ export const regions: Region[] = [
   {
     id: "lakes-n",
     name: "North Lakes",
-    area: "Lake District",
+    areaId: "lake-district",
     points: [{ lat: 54.62, lon: -3.13 }],
     rock: ["rhyolite"],
     tags: ["mountain"],
@@ -143,7 +149,7 @@ export const regions: Region[] = [
   {
     id: "lakes-c",
     name: "Central Lakes",
-    area: "Lake District",
+    areaId: "lake-district",
     points: [{ lat: 54.45, lon: -3.1 }],
     rock: ["rhyolite"],
     tags: ["mountain"],
@@ -152,7 +158,7 @@ export const regions: Region[] = [
   {
     id: "lakes-s",
     name: "South Lakes",
-    area: "Lake District",
+    areaId: "lake-district",
     points: [{ lat: 54.35, lon: -3.1 }],
     rock: ["rhyolite"],
     tags: ["mountain"],
@@ -163,7 +169,7 @@ export const regions: Region[] = [
   {
     id: "york-dales-w",
     name: "Dales West",
-    area: "Yorkshire",
+    areaId: "yorkshire",
     points: [{ lat: 54.07, lon: -2.16 }],
     rock: ["limestone"],
     external: { metOfficeId: "gcw7s4y98", bbcId: "2638192" }
@@ -171,7 +177,7 @@ export const regions: Region[] = [
   {
     id: "york-dales-e",
     name: "Dales East",
-    area: "Yorkshire",
+    areaId: "yorkshire",
     points: [{ lat: 53.92, lon: -1.7 }],
     rock: ["grit"],
     external: { metOfficeId: "gcwg8jffz", bbcId: "2640579" }
@@ -179,7 +185,7 @@ export const regions: Region[] = [
   {
     id: "york-dales-s",
     name: "Dales South",
-    area: "Yorkshire",
+    areaId: "yorkshire",
     points: [{ lat: 53.92, lon: -1.82 }],
     rock: ["grit"],
     external: { metOfficeId: "gcwdy8cc8", bbcId: "2646272" }
@@ -187,7 +193,7 @@ export const regions: Region[] = [
   {
     id: "york-moors",
     name: "North York Moors",
-    area: "Yorkshire",
+    areaId: "yorkshire",
     points: [{ lat: 54.4, lon: -0.9 }],
     rock: ["sandstone"],
     external: { metOfficeId: "gcxtfnft4", bbcId: "2634135" }
@@ -197,7 +203,7 @@ export const regions: Region[] = [
   {
     id: "northumberland",
     name: "Northumberland",
-    area: "Northumberland",
+    areaId: "northumberland",
     points: [{ lat: 55.27, lon: -1.93 }],
     rock: ["sandstone"],
     external: { metOfficeId: "gcyefpzze", bbcId: "2633606" }
@@ -206,8 +212,8 @@ export const regions: Region[] = [
   // --- Pembrokeshire ---
   {
     id: "pembroke",
-    name: "Pembroke",
-    area: "Pembrokeshire",
+    name: "Pembroke (Sir Benfro)",
+    areaId: "pembrokeshire",
     points: [{ lat: 51.62, lon: -5.0 }],
     rock: ["limestone"],
     tags: ["sea-cliff"],
@@ -217,8 +223,8 @@ export const regions: Region[] = [
   // --- South Wales ---
   {
     id: "gower",
-    name: "Gower",
-    area: "South Wales",
+    name: "Gower (Gŵyr)",
+    areaId: "south-wales",
     points: [{ lat: 51.57, lon: -4.17 }],
     rock: ["limestone"],
     tags: ["sea-cliff"],
@@ -226,8 +232,8 @@ export const regions: Region[] = [
   },
   {
     id: "wye",
-    name: "Wye Valley",
-    area: "South Wales",
+    name: "Wye Valley (Dyffryn Gwy)",
+    areaId: "south-wales",
     points: [{ lat: 51.83, lon: -2.63 }],
     rock: ["limestone"],
     external: { metOfficeId: "gcnjg1jby", bbcId: "2653256" }
@@ -237,7 +243,7 @@ export const regions: Region[] = [
   {
     id: "scotland-nw",
     name: "North West Highlands",
-    area: "NW Highlands & Skye",
+    areaId: "scotland-nw-highlands",
     points: [{ lat: 58.0, lon: -5.0 }],
     rock: ["gneiss", "sandstone"],
     tags: ["mountain"],
@@ -245,8 +251,8 @@ export const regions: Region[] = [
   },
   {
     id: "scotland-skye",
-    name: "Skye & Hebrides",
-    area: "NW Highlands & Skye",
+    name: "Skye (An t-Eilean Sgitheanach) & Hebrides",
+    areaId: "scotland-nw-highlands",
     points: [{ lat: 57.3, lon: -6.2 }],
     rock: ["gabbro", "gneiss"],
     tags: ["sea-cliff", "mountain"],
@@ -256,8 +262,8 @@ export const regions: Region[] = [
   // --- Ben Nevis & Glen Coe ---
   {
     id: "scotland-c",
-    name: "Ben Nevis & Glen Coe",
-    area: "Ben Nevis & Glen Coe",
+    name: "Beinn Nibheis (Ben Nevis) & Gleann Comhann (Glen Coe)",
+    areaId: "scotland-glencoe",
     points: [{ lat: 56.8, lon: -4.9 }],
     rock: ["granite"],
     tags: ["mountain"],
@@ -267,8 +273,8 @@ export const regions: Region[] = [
   // --- Cairngorms & East Scotland ---
   {
     id: "scotland-cairngorms",
-    name: "Cairngorms",
-    area: "Cairngorms & East Scotland",
+    name: "Am Monadh Ruadh (Cairngorms)",
+    areaId: "scotland-cairngorms",
     points: [{ lat: 57.1, lon: -3.67 }],
     rock: ["granite"],
     tags: ["mountain"],
@@ -277,7 +283,7 @@ export const regions: Region[] = [
   {
     id: "scotland-aberdeen",
     name: "Aberdeenshire",
-    area: "Cairngorms & East Scotland",
+    areaId: "scotland-cairngorms",
     points: [{ lat: 57.1, lon: -2.3 }],
     rock: ["granite"],
     tags: ["sea-cliff"],
@@ -288,7 +294,7 @@ export const regions: Region[] = [
   {
     id: "scotland-centralbelt",
     name: "Central Belt",
-    area: "Central Scotland",
+    areaId: "scotland-central",
     points: [{ lat: 55.9, lon: -3.6 }],
     rock: ["dolerite"],
     external: { metOfficeId: "gcvwr3zrw", bbcId: "2650225" }
@@ -298,7 +304,7 @@ export const regions: Region[] = [
   {
     id: "avon-gorge",
     name: "Avon Gorge & Bristol",
-    area: "South West England",
+    areaId: "south-west-england",
     points: [{ lat: 51.46, lon: -2.62 }],
     rock: ["limestone"],
     tags: [],
@@ -307,7 +313,7 @@ export const regions: Region[] = [
   {
     id: "avon-cheddar",
     name: "Cheddar",
-    area: "South West England",
+    areaId: "south-west-england",
     points: [{ lat: 51.28, lon: -2.76 }],
     rock: ["limestone"],
     external: { metOfficeId: "gcn58z5jb", bbcId: "2653281" }
@@ -315,7 +321,7 @@ export const regions: Region[] = [
   {
     id: "dartmoor",
     name: "Dartmoor",
-    area: "South West England",
+    areaId: "south-west-england",
     points: [{ lat: 50.58, lon: -3.95 }],
     rock: ["granite"],
     external: { metOfficeId: "gbvpt1q20", bbcId: "2639885" }
@@ -323,7 +329,7 @@ export const regions: Region[] = [
   {
     id: "west-cornwall",
     name: "West Cornwall",
-    area: "South West England",
+    areaId: "south-west-england",
     points: [{ lat: 50.17, lon: -5.55 }],
     rock: ["granite"],
     tags: ["sea-cliff"],
@@ -332,7 +338,7 @@ export const regions: Region[] = [
   {
     id: "north-devon-cornwall",
     name: "North Devon & Cornwall",
-    area: "South West England",
+    areaId: "south-west-england",
     points: [{ lat: 51.21, lon: -4.63 }],
     rock: ["culm", "granite"],
     tags: ["sea-cliff"],
@@ -343,7 +349,7 @@ export const regions: Region[] = [
   {
     id: "dorset-portland",
     name: "Portland",
-    area: "South Coast England",
+    areaId: "south-coast-england",
     points: [{ lat: 50.54, lon: -2.44 }],
     rock: ["limestone"],
     external: { metOfficeId: "gbyr86r5p", bbcId: "6692041" }
@@ -351,7 +357,7 @@ export const regions: Region[] = [
   {
     id: "dorset-swanage",
     name: "Swanage",
-    area: "South Coast England",
+    areaId: "south-coast-england",
     points: [{ lat: 50.6, lon: -1.95 }],
     rock: ["limestone"],
     tags: ["sea-cliff"],
@@ -360,7 +366,7 @@ export const regions: Region[] = [
   {
     id: "southern-sandstone",
     name: "Southern Sandstone",
-    area: "South Coast England",
+    areaId: "south-coast-england",
     points: [{ lat: 51.1, lon: 0.15 }],
     rock: ["sandstone"],
     tags: ["fragile"],
